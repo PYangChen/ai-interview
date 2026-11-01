@@ -14,8 +14,13 @@ const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 // 對話中的一則訊息：assistant = 面試官，user = 應徵者
 type ChatMessage = { role: "assistant" | "user"; content: string };
 
-// 建立 OpenAI client。放在模組層級，同一個伺服器程序內所有請求共用，不用每次重建
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// OpenAI client 不能在模組層級建立：沒有 API Key 時 SDK 會立刻丟錯，
+// 導致 build（Vercel 會載入這支檔案收集設定）失敗。改成請求進來、確認有 Key 後才建立
+let client: OpenAI | undefined;
+function getClient(apiKey: string) {
+  client ??= new OpenAI({ apiKey });
+  return client;
+}
 
 /**
  * 依照「面試進行到哪裡」產生給 AI 的 system prompt（面試官的角色與指令）。
@@ -133,7 +138,7 @@ export async function POST(request: Request) {
 
   try {
     // 呼叫 OpenAI。訊息順序：system 指令 -> 歷史對話 -> (開場時的觸發訊息)
-    const completion = await client.chat.completions.create({
+    const completion = await getClient(process.env.OPENAI_API_KEY).chat.completions.create({
       model: MODEL,
       messages: [
         // system prompt 每次依進度重新產生，所以 AI 永遠知道現在該做什麼
