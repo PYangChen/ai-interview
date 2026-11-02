@@ -8,19 +8,12 @@ const DEFAULT_QUESTIONS = 3;
 // 題數的下限與上限，避免使用者要求 0 題或 9999 題（會燒掉大量 token）
 const MIN_QUESTIONS = 1;
 const MAX_QUESTIONS = 10;
-// 使用的模型；可在 .env.local 設定 OPENAI_MODEL 覆蓋，沒設就用 gpt-4o-mini
+// 使用的模型；可在環境變數設定 OPENAI_MODEL 覆蓋，沒設就用 gpt-4o-mini
+// （BYOK 模式下，伺服器不持有任何 OpenAI API Key，Key 一律由使用者在請求標頭帶上）
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
 // 對話中的一則訊息：assistant = 面試官，user = 應徵者
 type ChatMessage = { role: "assistant" | "user"; content: string };
-
-// OpenAI client 不能在模組層級建立：沒有 API Key 時 SDK 會立刻丟錯，
-// 導致 build（Vercel 會載入這支檔案收集設定）失敗。改成請求進來、確認有 Key 後才建立
-let client: OpenAI | undefined;
-function getClient(apiKey: string) {
-  client ??= new OpenAI({ apiKey });
-  return client;
-}
 
 /**
  * 依照「面試進行到哪裡」產生給 AI 的 system prompt（面試官的角色與指令）。
@@ -74,6 +67,9 @@ X / 100
 /**
  * POST /api/interview
  *
+ * 請求標頭：
+ *   - x-openai-api-key: string    使用者自己的 OpenAI API Key（必填，BYOK）
+ *
  * 請求 body（JSON）：
  *   - jobDescription: string      職缺描述（必填）
  *   - messages: ChatMessage[]     到目前為止的完整對話（第一次呼叫傳空陣列）
@@ -83,12 +79,17 @@ X / 100
  *   - 成功：{ reply: string, done: boolean }  done 為 true 代表這是最終評估
  *   - 失敗：{ error: string }，並帶對應的 HTTP 狀態碼
  *
- * 伺服器本身「不保存」任何狀態，面試進度完全由前端傳來的 messages 推算。
+ * 伺服器本身「不保存」任何狀態，面試進度完全由前端傳來的 messages 推算；
+ * 使用者的 API Key 只用於這一次請求，不會被儲存，也不會寫進 log。
  */
 export async function POST(request: Request) {
-  // 沒有 API Key 就直接回 500，避免白白送出一個一定失敗的請求
-  if (!process.env.OPENAI_API_KEY) {
-    return Response.json({ error: "伺服器尚未設定 OPENAI_API_KEY" }, { status: 500 });
+  // BYOK：API Key 由使用者在請求標頭帶上。沒帶就回 401，並提示去設定頁輸入
+  const apiKey = request.headers.get("x-openai-api-key")?.trim();
+  if (!apiKey) {
+    return Response.json(
+      { error: "請先到「設定」輸入你的 OpenAI API Key" },
+      { status: 401 },
+    );
   }
 
   // 解析 request body。欄位型別先標成 unknown，因為前端傳什麼都不可信，後面逐一驗證
@@ -138,7 +139,7 @@ export async function POST(request: Request) {
 
   try {
     // 呼叫 OpenAI。訊息順序：system 指令 -> 歷史對話 -> (開場時的觸發訊息)
-    const completion = await getClient(process.env.OPENAI_API_KEY).chat.completions.create({
+    const completion = await new OpenAI({ apiKey }).chat.completions.create({
       model: MODEL,
       messages: [
         // system prompt 每次依進度重新產生，所以 AI 永遠知道現在該做什麼
@@ -159,9 +160,26 @@ export async function POST(request: Request) {
       done: answered >= total,
     });
   } catch (err) {
-    // OpenAI 呼叫失敗（網路、額度、金鑰錯誤等）：詳細錯誤只寫到伺服器 log，
-    // 回給前端的訊息保持簡短，不洩漏內部細節；502 表示上游服務出問題
-    console.error("OpenAI error:", err);
+    // 使用者的 Key 有問題（無效、被撤銷、額度用完）時，要明確告訴他怎麼處理
+    if (err instanceof OpenAI.APIError) {
+      // log 只記狀態碼與錯誤代碼，不記完整錯誤物件，避免 Key 片段出現在 log
+      console.error("OpenAI error:", err.status, err.code);
+      if (err.status === 401) {
+        return Response.json(
+          { error: "API Key 無效，請到「設定」重新輸入" },
+          { status: 401 },
+        );
+      }
+      if (err.status === 429) {
+        return Response.json(
+          { error: "你的 OpenAI 額度不足或請求太頻繁，請檢查帳戶用量後再試" },
+          { status: 429 },
+        );
+      }
+    } else {
+      console.error("OpenAI request failed");
+    }
+    // 其他錯誤（網路、OpenAI 服務異常）：502 表示上游服務出問題，不洩漏內部細節
     return Response.json({ error: "呼叫 OpenAI 失敗，請稍後再試" }, { status: 502 });
   }
 }

@@ -3,7 +3,7 @@ import Link from "next/link";
 const steps = [
   {
     title: "貼上職缺描述",
-    body: "把徵才頁面的內容整段貼進來，再選你想練習幾題（1 到 10 題）。",
+    body: "先在設定貼上你自己的 OpenAI API Key，再把徵才頁面的內容整段貼進來，選你想練習幾題（1 到 10 題）。",
   },
   {
     title: "像真的面試一樣回答",

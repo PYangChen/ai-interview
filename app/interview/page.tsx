@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import { useApiKey } from "@/lib/apiKey";
 
 type ChatMessage = { role: "assistant" | "user"; content: string };
 
 export default function Home() {
+  const apiKey = useApiKey();
   const [jobDescription, setJobDescription] = useState("");
   const [totalQuestions, setTotalQuestions] = useState(3);
   const [started, setStarted] = useState(false);
@@ -26,7 +29,11 @@ export default function Home() {
     try {
       const res = await fetch("/api/interview", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // BYOK：帶上使用者自己的 OpenAI API Key
+          "x-openai-api-key": apiKey ?? "",
+        },
         body: JSON.stringify({ jobDescription, messages: history, totalQuestions }),
       });
       const data = await res.json();
@@ -41,7 +48,7 @@ export default function Home() {
   }
 
   function start() {
-    if (!jobDescription.trim()) return;
+    if (!jobDescription.trim() || !apiKey) return;
     setStarted(true);
     callApi([]);
   }
@@ -70,6 +77,15 @@ export default function Home() {
           <h1 className="font-serif text-4xl font-black leading-tight sm:text-5xl">
             貼上職缺，開始面試。
           </h1>
+          {apiKey === "" && (
+            <p className="border-2 border-ink bg-signal px-4 py-3 font-bold">
+              開始前，請先到{" "}
+              <Link href="/settings" className="underline underline-offset-4">
+                設定
+              </Link>{" "}
+              輸入你的 OpenAI API Key。
+            </p>
+          )}
           <div className="flex flex-col gap-2">
             <label htmlFor="jd" className="font-bold">
               職缺描述
@@ -104,7 +120,7 @@ export default function Home() {
             </div>
             <button
               onClick={start}
-              disabled={!jobDescription.trim()}
+              disabled={!jobDescription.trim() || !apiKey}
               className="bg-cobalt px-8 py-3 text-lg font-bold text-white transition-colors hover:bg-ink disabled:cursor-not-allowed disabled:opacity-40"
             >
               開始面試
@@ -163,6 +179,14 @@ export default function Home() {
             {error && (
               <p role="alert" className="border-2 border-red-700 bg-red-50 px-4 py-3 text-red-800">
                 {error}
+                {error.includes("設定") && (
+                  <>
+                    {" "}
+                    <Link href="/settings" className="font-bold underline underline-offset-4">
+                      前往設定
+                    </Link>
+                  </>
+                )}
               </p>
             )}
             <div ref={bottomRef} />

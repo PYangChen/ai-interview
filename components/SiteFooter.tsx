@@ -7,13 +7,18 @@ export default function SiteFooter() {
         <div className="max-w-md">
           <p className="font-serif text-xl font-black">AI 面試模擬器</p>
           <p className="mt-2 text-sm text-white/70">
-            回答內容會送到 OpenAI 產生面試問題與回饋，本站不會保存你的職缺描述或回答。
+            你需要自備 OpenAI API Key，它只存在你的瀏覽器。職缺描述與回答會送到 OpenAI 產生回饋，本站不會保存。
           </p>
         </div>
         <ul className="flex gap-8 text-sm sm:flex-col sm:gap-2">
           <li>
             <Link href="/interview" className="hover:underline">
               開始面試
+            </Link>
+          </li>
+          <li>
+            <Link href="/settings" className="hover:underline">
+              設定
             </Link>
           </li>
           <li>

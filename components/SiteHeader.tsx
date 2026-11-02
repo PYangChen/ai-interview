@@ -27,6 +27,9 @@ export default function SiteHeader() {
           <Link href="/#feedback" className="hidden hover:underline sm:inline">
             回饋範例
           </Link>
+          <Link href="/settings" className="hover:underline">
+            設定
+          </Link>
           {!inInterview && (
             <Link
               href="/interview"
